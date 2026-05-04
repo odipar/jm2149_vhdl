@@ -13,80 +13,32 @@ package org.jm2149.vhdl.idiomatic;
  * </ul>
  *
  * <h2>Low-level (cycle-accurate) API</h2>
- * <p>Set the public input fields, then call {@link #risingEdge()}.  All
- * output fields are valid immediately after the call returns.  This mirrors
- * the original {@code Ym2149Audio} interface exactly.
+ * <p>All chip inputs are passed as parameters to {@link #risingEdge} and all
+ * outputs are read back via typed getter methods.  This avoids mutable public
+ * state and makes the data-flow explicit:
  *
  * <pre>
  *   Ym2149AudioIdiomatic psg = new Ym2149AudioIdiomatic();
- *   psg.resetNI   = false;
- *   psg.selNI     = false;
- *   psg.enClkPsgI = false;
  *   for (int i = 0; i &lt; N; i++) {
- *       // set other inputs ...
- *       psg.risingEdge();
+ *       psg.risingEdge(enClkPsg, selN, resetN, bc, bdir, data);
+ *       int sample = psg.getMixAudioO();
  *   }
  * </pre>
  *
  * <h2>High-level convenience API</h2>
- * <p>For quick experimentation the chip can be driven via register writes
- * (bypassing the bus interface) and advanced by a given number of clock
- * cycles:
+ * <p>For quick experimentation the chip can be configured via the {@code set*()}
+ * helpers and then advanced with {@link #run}:
  *
  * <pre>
  *   Ym2149AudioIdiomatic psg = new Ym2149AudioIdiomatic();
- *   psg.applyReset();                  // hold reset for a few cycles
- *   psg.setTonePeriod(0, 500);         // channel A period
- *   psg.setVolume(0, 12);              // channel A volume
- *   psg.setMixer(0b00_111_110);        // tone A on, noise off
- *   int[] samples = psg.run(44100);    // run 44 100 clock cycles
+ *   psg.applyReset();
+ *   psg.setTonePeriod(0, 500);                                 // channel A period
+ *   psg.setVolume(0, 12);                                      // channel A volume
+ *   psg.setMixer(true, false, false, false, false, false);     // tone A on, rest off
+ *   int[] samples = psg.run(44100);                            // 44 100 clock cycles
  * </pre>
  */
 public final class Ym2149AudioIdiomatic {
-
-    // -----------------------------------------------------------------------
-    // Inputs  (set by the caller before each risingEdge() call)
-    // -----------------------------------------------------------------------
-
-    /** PSG clock-enable strobe (en_clk_psg_i). */
-    public boolean enClkPsgI = false;
-
-    /** Divide select, 0 = clock-enable / 2 (sel_n_i). */
-    public boolean selNI = false;
-
-    /** Active-low reset (reset_n_i). */
-    public boolean resetNI = false;
-
-    /** Bus control (bc_i). */
-    public boolean bcI = false;
-
-    /** Bus direction (bdir_i). */
-    public boolean bdirI = false;
-
-    /** 8-bit data bus input (data_i). */
-    public int dataI = 0;
-
-    // -----------------------------------------------------------------------
-    // Outputs  (valid after risingEdge() returns)
-    // -----------------------------------------------------------------------
-
-    /** Registered data output (data_r_o). */
-    public int dataRO = 0;
-
-    /** Channel A unsigned 12-bit DAC output (ch_a_o). */
-    public int chAO = 0;
-
-    /** Channel B unsigned 12-bit DAC output (ch_b_o). */
-    public int chBO = 0;
-
-    /** Channel C unsigned 12-bit DAC output (ch_c_o). */
-    public int chCO = 0;
-
-    /** Unsigned 14-bit mix audio (mix_audio_o). */
-    public int mixAudioO = 0;
-
-    /** Signed 14-bit PCM output (pcm14s_o). */
-    public int pcm14sO = 0;
 
     // -----------------------------------------------------------------------
     // DAC ROM  (32 entries, 12-bit logarithmic amplitude table)
@@ -145,16 +97,46 @@ public final class Ym2149AudioIdiomatic {
     private final EnvelopeGenerator env   = new EnvelopeGenerator();
 
     // -----------------------------------------------------------------------
+    // Outputs — typed getters (valid after each risingEdge() call)
+    // -----------------------------------------------------------------------
+
+    /** Registered data output (data_r_o). */
+    public int getDataRO()    { return dataOR; }
+
+    /** Channel A unsigned 12-bit DAC output (ch_a_o). */
+    public int getChAO()      { return dacAR; }
+
+    /** Channel B unsigned 12-bit DAC output (ch_b_o). */
+    public int getChBO()      { return dacBR; }
+
+    /** Channel C unsigned 12-bit DAC output (ch_c_o). */
+    public int getChCO()      { return dacCR; }
+
+    /** Unsigned 14-bit mixed audio output (mix_audio_o). */
+    public int getMixAudioO() { return sumAudioR; }
+
+    /** Signed 14-bit PCM output (pcm14s_o). */
+    public int getPcm14sO()   { return pcm14sR; }
+
+    // -----------------------------------------------------------------------
     // Single rising-edge simulation
     // -----------------------------------------------------------------------
 
     /**
      * Simulate one rising edge of {@code clk_i}.
      *
-     * <p>All inputs must be set before calling; all outputs are valid
-     * (and may have changed) after returning.
+     * <p>All chip inputs are supplied as parameters.  Outputs are read back
+     * via the {@code get*()} methods after this call returns.
+     *
+     * @param enClkPsgI  PSG clock-enable strobe (en_clk_psg_i)
+     * @param selNI      divide select — {@code false} = clock-enable / 2 (sel_n_i)
+     * @param resetNI    active-low reset (reset_n_i)
+     * @param bcI        bus control (bc_i)
+     * @param bdirI      bus direction (bdir_i)
+     * @param dataI      8-bit data bus input (data_i)
      */
-    public void risingEdge() {
+    public void risingEdge(boolean enClkPsgI, boolean selNI, boolean resetNI,
+                           boolean bcI, boolean bdirI, int dataI) {
 
         // ==================================================================
         // COMBINATORIAL — computed from current registered state
@@ -189,9 +171,9 @@ public final class Ym2149AudioIdiomatic {
         int dacRegIdx    = (regBits << 1) | dacBit0;
         int dacRegLevelS = DACROM[dacRegIdx];
 
-        int chALevelX = (regAddrR == 8)    ? dacRegLevelS : chALevelR;
-        int chBLevelX = (regAddrR == 9)    ? dacRegLevelS : chBLevelR;
-        int chCLevelX = (regAddrR == 0xA)  ? dacRegLevelS : chCLevelR;
+        int chALevelX = (regAddrR == 8)   ? dacRegLevelS : chALevelR;
+        int chBLevelX = (regAddrR == 9)   ? dacRegLevelS : chBLevelR;
+        int chCLevelX = (regAddrR == 0xA) ? dacRegLevelS : chCLevelR;
 
         // --- Register-file signal mapping ---
         int     chAPeriodS   = ((regFileAr[1] & 0x0F) << 8) | (regFileAr[0] & 0xFF);
@@ -218,7 +200,7 @@ public final class Ym2149AudioIdiomatic {
         boolean envHoldS      = (regFileAr[13] & 0x01) != 0;
 
         // --- Clock conditioning ---
-        boolean selFfX = !selFfR;
+        boolean selFfX       = !selFfR;
         boolean enIntClkPsgS = (!selNR) ? (enClkPsgI && selFfR) : enClkPsgI;
 
         int     clkDiv8X = (clkDiv8R + 1) & 0x7;
@@ -243,54 +225,21 @@ public final class Ym2149AudioIdiomatic {
         // --- Envelope DAC level (from current envelope state) ---
         int dacEnvLevelS = env.dacLevel(DACROM, envAttackS);
 
-        // --- Channel amplitude (gated by mixer) ---
-        int levelAS = !mixAS ? 0 : (!chAModeS ? chALevelR : dacEnvLevelS);
-        int levelBS = !mixBS ? 0 : (!chBModeS ? chBLevelR : dacEnvLevelS);
-        int levelCS = !mixCS ? 0 : (!chCModeS ? chCLevelR : dacEnvLevelS);
+        // --- Channel amplitude (gated by mixer) and signed PCM level ---
+        int levelAS = mixedLevel(mixAS, chAModeS, chALevelR, dacEnvLevelS);
+        int levelBS = mixedLevel(mixBS, chBModeS, chBLevelR, dacEnvLevelS);
+        int levelCS = mixedLevel(mixCS, chCModeS, chCLevelR, dacEnvLevelS);
 
-        // --- Signed PCM level (not gated by mixer) ---
         int levelAEnvS = chAModeS ? dacEnvLevelS : chALevelR;
         int levelBEnvS = chBModeS ? dacEnvLevelS : chBLevelR;
         int levelCEnvS = chCModeS ? dacEnvLevelS : chCLevelR;
 
-        boolean signAFlat = (chAToneEnNS && chANoiseEnNS)
-                          || flatlineAS
-                          || (!chANoiseEnNS && flatlineNS);
-        int signAX;
-        if (signAFlat) {
-            signAX = (levelAEnvS - 0x800) & 0xFFF;
-        } else if (!mixAS) {
-            int half = (levelAEnvS >> 1) & 0x7FF;
-            signAX = ((0x800 | ((~half) & 0x7FF)) + 1) & 0xFFF;
-        } else {
-            signAX = (levelAEnvS >> 1) & 0x7FF;
-        }
-
-        boolean signBFlat = (chBToneEnNS && chBNoiseEnNS)
-                          || flatlineBS
-                          || (!chBNoiseEnNS && flatlineNS);
-        int signBX;
-        if (signBFlat) {
-            signBX = (levelBEnvS - 0x800) & 0xFFF;
-        } else if (!mixBS) {
-            int half = (levelBEnvS >> 1) & 0x7FF;
-            signBX = ((0x800 | ((~half) & 0x7FF)) + 1) & 0xFFF;
-        } else {
-            signBX = (levelBEnvS >> 1) & 0x7FF;
-        }
-
-        boolean signCFlat = (chCToneEnNS && chCNoiseEnNS)
-                          || flatlineCS
-                          || (!chCNoiseEnNS && flatlineNS);
-        int signCX;
-        if (signCFlat) {
-            signCX = (levelCEnvS - 0x800) & 0xFFF;
-        } else if (!mixCS) {
-            int half = (levelCEnvS >> 1) & 0x7FF;
-            signCX = ((0x800 | ((~half) & 0x7FF)) + 1) & 0xFFF;
-        } else {
-            signCX = (levelCEnvS >> 1) & 0x7FF;
-        }
+        int signAX = signedLevel(levelAEnvS, chAToneEnNS, chANoiseEnNS,
+                                 flatlineAS, flatlineNS, mixAS);
+        int signBX = signedLevel(levelBEnvS, chBToneEnNS, chBNoiseEnNS,
+                                 flatlineBS, flatlineNS, mixBS);
+        int signCX = signedLevel(levelCEnvS, chCToneEnNS, chCNoiseEnNS,
+                                 flatlineCS, flatlineNS, mixCS);
 
         // ==================================================================
         // REGISTER UPDATE
@@ -328,7 +277,7 @@ public final class Ym2149AudioIdiomatic {
             selFfR = selFfX;
         }
 
-        // Save the pre-edge enCntR so generators receive the OLD registered value.
+        // Save the pre-edge enCntR so generators receive the OLD registered value
         // (enCntR is updated just below, before the generator ticks.)
         boolean oldEnCntR = enCntR;
 
@@ -385,26 +334,64 @@ public final class Ym2149AudioIdiomatic {
             signBR = signBX & 0xFFF;
             signCR = signCX & 0xFFF;
         }
-
-        // ==================================================================
-        // OUTPUT WIRES
-        // ==================================================================
-        dataRO    = dataOR;
-        chAO      = dacAR;
-        chBO      = dacBR;
-        chCO      = dacCR;
-        mixAudioO = sumAudioR;
-        pcm14sO   = pcm14sR;
     }
 
     // -----------------------------------------------------------------------
-    // Helper: sign-extend a 12-bit value to 14 bits
+    // Private static helpers — factored-out channel computations
     // -----------------------------------------------------------------------
-    private static int signExt12to14(int v12) {
-        if ((v12 & 0x800) != 0) {
-            return v12 | 0x3000;
+
+    /**
+     * Unsigned DAC level gated by the mixer output.
+     *
+     * @param mix       mixer output for this channel
+     * @param envMode   {@code true} when the channel uses the envelope generator
+     * @param fixedLevel pre-computed fixed DAC level from the volume register
+     * @param envLevel  envelope generator DAC level
+     * @return 12-bit unsigned level (0 when mixer is low)
+     */
+    private static int mixedLevel(boolean mix, boolean envMode,
+                                  int fixedLevel, int envLevel) {
+        return !mix ? 0 : (envMode ? envLevel : fixedLevel);
+    }
+
+    /**
+     * Signed 12-bit PCM level for one channel (not gated by the mixer).
+     *
+     * <p>Logic mirrors the VHDL {@code sign_x_r} computation:
+     * <ul>
+     *   <li>Flat condition → {@code levelEnv − 0x800} (mid-scale offset)
+     *   <li>Mixer low → negative half-amplitude
+     *   <li>Mixer high → positive half-amplitude
+     * </ul>
+     *
+     * @param levelEnv      envelope-or-fixed level for the channel
+     * @param toneEnN       tone-enable bit from register 7 (active-low)
+     * @param noiseEnN      noise-enable bit from register 7 (active-low)
+     * @param flatlineTone  {@code true} when the tone period is below flatline threshold
+     * @param flatlineNoise {@code true} when the noise period is below flatline threshold
+     * @param mix           mixer output for this channel
+     * @return 12-bit signed level
+     */
+    private static int signedLevel(int levelEnv, boolean toneEnN, boolean noiseEnN,
+                                   boolean flatlineTone, boolean flatlineNoise, boolean mix) {
+        boolean flat = (toneEnN && noiseEnN)
+                     || flatlineTone
+                     || (!noiseEnN && flatlineNoise);
+        if (flat) {
+            return (levelEnv - 0x800) & 0xFFF;
+        } else if (!mix) {
+            int half = (levelEnv >> 1) & 0x7FF;
+            return ((0x800 | ((~half) & 0x7FF)) + 1) & 0xFFF;
+        } else {
+            return (levelEnv >> 1) & 0x7FF;
         }
-        return v12 & 0xFFF;
+    }
+
+    /**
+     * Sign-extend a 12-bit value to 14 bits.
+     */
+    private static int signExt12to14(int v12) {
+        return ((v12 & 0x800) != 0) ? (v12 | 0x3000) : (v12 & 0xFFF);
     }
 
     // -----------------------------------------------------------------------
@@ -418,7 +405,7 @@ public final class Ym2149AudioIdiomatic {
      *
      * <p>Registers 0–15 correspond to the standard YM2149 register map:
      * <pre>
-     *  0-1  : Channel A tone period (low / high nibble)
+     *  0-1  : Channel A tone period (low byte / high nibble)
      *  2-3  : Channel B tone period
      *  4-5  : Channel C tone period
      *  6    : Noise period (5-bit)
@@ -438,18 +425,17 @@ public final class Ym2149AudioIdiomatic {
         }
         regFileAr[reg] = value & 0xFF;
 
-        // Maintain the pre-computed DAC level cache for volume registers
+        // Keep the pre-computed DAC level cache in sync for volume registers
         if (reg >= 8 && reg <= 10) {
-            int bits    = value & 0x0F;
-            int bit0    = (bits == 0) ? 0 : 1;
-            int idx     = (bits << 1) | bit0;
-            int level   = DACROM[idx];
+            int bits  = value & 0x0F;
+            int idx   = (bits << 1) | ((bits == 0) ? 0 : 1);
+            int level = DACROM[idx];
             if (reg == 8)  chALevelR = level;
             if (reg == 9)  chBLevelR = level;
             if (reg == 10) chCLevelR = level;
         }
 
-        // A write to register 13 also resets the envelope generator
+        // Writing register 13 resets the envelope generator (hardware behaviour)
         if (reg == 13) {
             env.reset();
             envShapeWrR = false;
@@ -460,14 +446,14 @@ public final class Ym2149AudioIdiomatic {
      * Set the tone period for a channel.
      *
      * <p>The 12-bit {@code period} value is split across two consecutive
-     * registers as in the YM2149 hardware:
+     * registers:
      * <pre>
      *   reg[2*channel]     = period &amp; 0xFF         (low byte)
      *   reg[2*channel + 1] = (period &gt;&gt; 8) &amp; 0x0F  (high nibble)
      * </pre>
      *
      * @param channel 0 = A, 1 = B, 2 = C
-     * @param period  12-bit tone period (1–4095; values &lt; 6 flatline)
+     * @param period  12-bit tone period (1–4095; values &lt; 6 flatline the output)
      * @throws IllegalArgumentException if {@code channel} is not 0, 1 or 2
      */
     public void setTonePeriod(int channel, int period) {
@@ -482,50 +468,55 @@ public final class Ym2149AudioIdiomatic {
     /**
      * Set the noise period (register 6, bits 4-0).
      *
-     * @param period 5-bit noise period (values &lt; 5 flatline)
+     * @param period 5-bit noise period (values &lt; 5 flatline the output)
      */
     public void setNoisePeriod(int period) {
         regFileAr[6] = period & 0x1F;
     }
 
     /**
-     * Set the mixer control byte (register 7).
+     * Configure the mixer by specifying which tone and noise sources are
+     * enabled for each channel.
      *
-     * <p>Bit layout (active-low enables):
-     * <pre>
-     *   bit 5 : noise enable channel C (0 = enabled)
-     *   bit 4 : noise enable channel B
-     *   bit 3 : noise enable channel A
-     *   bit 2 : tone  enable channel C
-     *   bit 1 : tone  enable channel B
-     *   bit 0 : tone  enable channel A
-     * </pre>
+     * <p>Parameters use active-high convention (pass {@code true} to enable).
+     * Internally the values are stored as the active-low register 7 encoding.
      *
-     * @param mixer 6-bit mixer byte
+     * @param toneA   enable channel A tone output
+     * @param toneB   enable channel B tone output
+     * @param toneC   enable channel C tone output
+     * @param noiseA  enable channel A noise output
+     * @param noiseB  enable channel B noise output
+     * @param noiseC  enable channel C noise output
      */
-    public void setMixer(int mixer) {
-        regFileAr[7] = mixer & 0x3F;
+    public void setMixer(boolean toneA, boolean toneB, boolean toneC,
+                         boolean noiseA, boolean noiseB, boolean noiseC) {
+        int reg7 = 0;
+        if (!toneA)  reg7 |= 0x01;
+        if (!toneB)  reg7 |= 0x02;
+        if (!toneC)  reg7 |= 0x04;
+        if (!noiseA) reg7 |= 0x08;
+        if (!noiseB) reg7 |= 0x10;
+        if (!noiseC) reg7 |= 0x20;
+        regFileAr[7] = reg7;
     }
 
     /**
      * Set the volume / mode for a channel (registers 8–10).
      *
      * @param channel  0 = A, 1 = B, 2 = C
-     * @param volume   4-bit volume level (0–15); ignored when {@code envMode} is true
-     * @param envMode  {@code true} to use envelope generator output
+     * @param volume   4-bit volume level (0–15); ignored when {@code envMode} is {@code true}
+     * @param envMode  {@code true} to use envelope generator output instead of fixed volume
      * @throws IllegalArgumentException if {@code channel} is not 0, 1 or 2
      */
     public void setVolume(int channel, int volume, boolean envMode) {
         if (channel < 0 || channel > 2) {
             throw new IllegalArgumentException("channel must be 0, 1 or 2; got: " + channel);
         }
-        int reg   = 8 + channel;
-        int value = (envMode ? 0x10 : 0) | (volume & 0x0F);
-        writeRegister(reg, value);
+        writeRegister(8 + channel, (envMode ? 0x10 : 0) | (volume & 0x0F));
     }
 
     /**
-     * Convenience overload that sets a fixed (non-envelope) volume level.
+     * Convenience overload — sets a fixed (non-envelope) volume level.
      *
      * @param channel 0 = A, 1 = B, 2 = C
      * @param volume  4-bit volume level (0–15)
@@ -545,12 +536,11 @@ public final class Ym2149AudioIdiomatic {
     }
 
     /**
-     * Set the envelope shape (register 13, CONT/ATT/ALT/HOLD).
+     * Set the envelope shape (register 13: CONT/ATT/ALT/HOLD bits).
      *
-     * <p>Writing this register also resets the envelope generator, as in
-     * the hardware.
+     * <p>Writing this register also resets the envelope generator, as in the hardware.
      *
-     * @param shape 4-bit shape byte
+     * @param shape 4-bit shape value
      */
     public void setEnvelopeShape(int shape) {
         writeRegister(13, shape & 0x0F);
@@ -559,30 +549,27 @@ public final class Ym2149AudioIdiomatic {
     /**
      * Drive the chip through an active-low reset sequence.
      *
-     * <p>Asserts reset for 8 clock cycles ({@code resetNI=false,
-     * enClkPsgI=true}) and then releases it ({@code resetNI=true}).
-     * The chip is left in reset-released state, ready for normal use.
+     * <p>Asserts {@code reset_n_i = false} for 8 rising-clock edges
+     * ({@code en_clk_psg_i = true, sel_n_i = false}) and then releases reset.
+     * The chip is left in a quiescent state, ready for normal use.
      */
     public void applyReset() {
-        enClkPsgI = true;
-        selNI     = false;
-        resetNI   = false;
         for (int i = 0; i < 8; i++) {
-            risingEdge();
+            risingEdge(true, false, false, false, false, 0);
         }
-        resetNI = true;
     }
 
     /**
      * Advance the simulation by {@code cycles} rising-clock-edges and return
      * the {@code mix_audio_o} output sampled after each edge.
      *
-     * <p>The current input fields ({@code enClkPsgI}, {@code selNI}, etc.)
-     * remain unchanged across all cycles.  Call this method after configuring
-     * the chip via {@link #writeRegister} or the {@code set*()} helpers.
+     * <p>Each cycle is simulated with standard operating inputs:
+     * {@code en_clk_psg_i = true, sel_n_i = false, reset_n_i = true} and
+     * an inactive bus.  Call this method after configuring the chip via
+     * {@link #writeRegister} or the {@code set*()} helpers.
      *
      * @param cycles number of clock cycles to simulate (must be &gt; 0)
-     * @return array of length {@code cycles} containing {@code mixAudioO}
+     * @return array of length {@code cycles} containing {@link #getMixAudioO()}
      *         after each cycle
      * @throws IllegalArgumentException if {@code cycles} is not positive
      */
@@ -592,8 +579,8 @@ public final class Ym2149AudioIdiomatic {
         }
         int[] out = new int[cycles];
         for (int i = 0; i < cycles; i++) {
-            risingEdge();
-            out[i] = mixAudioO;
+            risingEdge(true, false, true, false, false, 0);
+            out[i] = sumAudioR;
         }
         return out;
     }

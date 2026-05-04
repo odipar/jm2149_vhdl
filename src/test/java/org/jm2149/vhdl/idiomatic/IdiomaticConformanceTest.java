@@ -90,21 +90,21 @@ class IdiomaticConformanceTest {
         final Map<String, Integer> groupEvents = new LinkedHashMap<>();
 
         Runnable checkOutputs = () -> {
-            if (uut.chAO      != expCha[0])
+            if (uut.getChAO()      != expCha[0])
                 fail(String.format("[%s] ch_a_o: expected 0x%03X, got 0x%03X",
-                        label, expCha[0], uut.chAO));
-            if (uut.chBO      != expChb[0])
+                        label, expCha[0], uut.getChAO()));
+            if (uut.getChBO()      != expChb[0])
                 fail(String.format("[%s] ch_b_o: expected 0x%03X, got 0x%03X",
-                        label, expChb[0], uut.chBO));
-            if (uut.chCO      != expChc[0])
+                        label, expChb[0], uut.getChBO()));
+            if (uut.getChCO()      != expChc[0])
                 fail(String.format("[%s] ch_c_o: expected 0x%03X, got 0x%03X",
-                        label, expChc[0], uut.chCO));
-            if (uut.mixAudioO != expMix[0])
+                        label, expChc[0], uut.getChCO()));
+            if (uut.getMixAudioO() != expMix[0])
                 fail(String.format("[%s] mix_audio_o: expected 0x%04X, got 0x%04X",
-                        label, expMix[0], uut.mixAudioO));
-            if (uut.pcm14sO   != expPcm[0])
+                        label, expMix[0], uut.getMixAudioO()));
+            if (uut.getPcm14sO()   != expPcm[0])
                 fail(String.format("[%s] pcm14s_o: expected 0x%04X, got 0x%04X",
-                        label, expPcm[0], uut.pcm14sO));
+                        label, expPcm[0], uut.getPcm14sO()));
         };
 
         Runnable applyGroup = () -> {
@@ -135,13 +135,8 @@ class IdiomaticConformanceTest {
                                && prevClk[0] == 0;
 
             if (hasClkRise) {
-                uut.enClkPsgI = curEn[0]   != 0;
-                uut.selNI     = curSel[0]  != 0;
-                uut.resetNI   = curRst[0]  != 0;
-                uut.bcI       = curBc[0]   != 0;
-                uut.bdirI     = curBdir[0] != 0;
-                uut.dataI     = curData[0];
-                uut.risingEdge();
+                uut.risingEdge(curEn[0] != 0, curSel[0] != 0, curRst[0] != 0,
+                               curBc[0] != 0, curBdir[0] != 0, curData[0]);
 
                 applyGroup.run();
                 checkOutputs.run();

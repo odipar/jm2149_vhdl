@@ -20,12 +20,11 @@ class Ym2149AudioIdiomaticTest {
     void applyReset_leavesChipInQuiescentState() {
         Ym2149AudioIdiomatic psg = new Ym2149AudioIdiomatic();
         psg.applyReset();
-        // After reset all DAC outputs should be at mid-scale (0x800)
-        // with no sound: ch_x_o = 0 (mixer disables everything), mix = 0
-        assertEquals(0, psg.chAO,      "ch_a_o after reset");
-        assertEquals(0, psg.chBO,      "ch_b_o after reset");
-        assertEquals(0, psg.chCO,      "ch_c_o after reset");
-        assertEquals(0, psg.mixAudioO, "mix_audio after reset");
+        // After reset all DAC outputs should be zero (mixer disables all channels)
+        assertEquals(0, psg.getChAO(),      "ch_a_o after reset");
+        assertEquals(0, psg.getChBO(),      "ch_b_o after reset");
+        assertEquals(0, psg.getChCO(),      "ch_c_o after reset");
+        assertEquals(0, psg.getMixAudioO(), "mix_audio after reset");
     }
 
     // -----------------------------------------------------------------------
@@ -42,31 +41,26 @@ class Ym2149AudioIdiomaticTest {
     @Test
     void writeRegister_masksTo8Bits() {
         Ym2149AudioIdiomatic psg = new Ym2149AudioIdiomatic();
-        // writing 0x1FF to register 0 should only store 0xFF
-        psg.writeRegister(0, 0x1FF);
-        psg.writeRegister(1, 0);
-        // Period should be 0xFF (no high bits)
-        // We can verify indirectly: setTonePeriod(0, 0xFF) does the same
         Ym2149AudioIdiomatic ref = new Ym2149AudioIdiomatic();
-        ref.setTonePeriod(0, 0xFF);
-        // Both should have the same register state — run a few cycles and compare
+
         psg.applyReset();
         ref.applyReset();
+
+        // Writing 0x1FF to register 0 should only store 0xFF (same as period 0xFF)
         psg.writeRegister(0, 0x1FF);
         ref.setTonePeriod(0, 0xFF);
-        // set mixer and volume identical
-        psg.setMixer(0b00_111_110);
-        ref.setMixer(0b00_111_110);
+
+        psg.setMixer(true, false, false, false, false, false);
+        ref.setMixer(true, false, false, false, false, false);
         psg.setVolume(0, 10);
         ref.setVolume(0, 10);
-        psg.enClkPsgI = true; psg.selNI = false; psg.resetNI = true;
-        ref.enClkPsgI = true; ref.selNI = false; ref.resetNI = true;
+
         for (int i = 0; i < 200; i++) {
-            psg.risingEdge();
-            ref.risingEdge();
+            psg.risingEdge(true, false, true, false, false, 0);
+            ref.risingEdge(true, false, true, false, false, 0);
         }
-        assertEquals(ref.chAO,      psg.chAO,      "ch_a_o");
-        assertEquals(ref.mixAudioO, psg.mixAudioO, "mix_audio_o");
+        assertEquals(ref.getChAO(),      psg.getChAO(),      "ch_a_o");
+        assertEquals(ref.getMixAudioO(), psg.getMixAudioO(), "mix_audio_o");
     }
 
     // -----------------------------------------------------------------------
@@ -83,22 +77,50 @@ class Ym2149AudioIdiomaticTest {
     @Test
     void setTonePeriod_setsAllThreeChannels() {
         Ym2149AudioIdiomatic psg = new Ym2149AudioIdiomatic();
-        psg.setTonePeriod(0, 0xABC);
-        psg.setTonePeriod(1, 0x123);
-        psg.setTonePeriod(2, 0xFFF);
-        // Verify register file encoding
-        // Channel A: reg[0]=0xBC, reg[1]=0x0A
-        // Channel B: reg[2]=0x23, reg[3]=0x01
-        // Channel C: reg[4]=0xFF, reg[5]=0x0F
-        // We verify by reading via the run() path (indirect), or by a simpler
-        // sanity check: period 1 is below flatline, period 0xABC is not.
-        // Just verify no exception is thrown and the chip runs without error.
         psg.applyReset();
         psg.setTonePeriod(0, 0xABC);
-        psg.setMixer(0b00_111_110);
+        psg.setMixer(true, false, false, false, false, false);
         psg.setVolume(0, 15);
-        psg.enClkPsgI = true; psg.selNI = false; psg.resetNI = true;
         assertDoesNotThrow(() -> psg.run(100));
+    }
+
+    // -----------------------------------------------------------------------
+    // setMixer
+    // -----------------------------------------------------------------------
+
+    @Test
+    void setMixer_allChannelsOff_producesConstantOutput() {
+        // When all tone and noise sources are disabled the YM2149 passes through
+        // a constant level (mixer logic is active-low; all-off → both enables
+        // high → channel always open).  The output should remain constant, not
+        // vary between zero and the peak level as a tone would.
+        Ym2149AudioIdiomatic psg = new Ym2149AudioIdiomatic();
+        psg.applyReset();
+        psg.setTonePeriod(0, 100);
+        psg.setVolume(0, 15);
+        psg.setMixer(false, false, false, false, false, false);
+        psg.run(4);                // warm-up: let the DAC pipeline settle
+        int[] samples = psg.run(1000);
+        int steady = samples[0];
+        for (int s : samples) {
+            assertEquals(steady, s, "output should be constant when all mixer sources disabled");
+        }
+        assertTrue(steady > 0, "steady-state output should be non-zero with volume set");
+    }
+
+    @Test
+    void setMixer_toneAOnly_producesNonZeroOutput() {
+        Ym2149AudioIdiomatic psg = new Ym2149AudioIdiomatic();
+        psg.applyReset();
+        psg.setTonePeriod(0, 100);
+        psg.setVolume(0, 15);
+        psg.setMixer(true, false, false, false, false, false);
+        int[] samples = psg.run(1000);
+        boolean anyNonZero = false;
+        for (int s : samples) {
+            if (s != 0) { anyNonZero = true; break; }
+        }
+        assertTrue(anyNonZero, "Expected non-zero output with tone A enabled");
     }
 
     // -----------------------------------------------------------------------
@@ -116,31 +138,18 @@ class Ym2149AudioIdiomaticTest {
     void run_returnsSameLengthAsRequested() {
         Ym2149AudioIdiomatic psg = new Ym2149AudioIdiomatic();
         psg.applyReset();
-        psg.enClkPsgI = true;
-        psg.selNI     = false;
-        psg.resetNI   = true;
-        int[] samples = psg.run(256);
-        assertEquals(256, samples.length);
+        assertEquals(256, psg.run(256).length);
     }
 
     @Test
     void run_toneChannelProducesNonZeroOutput() {
         Ym2149AudioIdiomatic psg = new Ym2149AudioIdiomatic();
         psg.applyReset();
-
-        // Configure channel A: period=100, volume=15, tone only, no noise
         psg.setTonePeriod(0, 100);
         psg.setVolume(0, 15);
-        psg.setMixer(0b00_111_110);  // tone A enabled (bit0=0), noise off
-
-        psg.enClkPsgI = true;
-        psg.selNI     = false;
-        psg.resetNI   = true;
+        psg.setMixer(true, false, false, false, false, false);
 
         int[] samples = psg.run(1000);
-
-        // With tone enabled and volume set, mix_audio_o must be non-zero
-        // at some point (the tone flips periodically)
         boolean anyNonZero = false;
         for (int s : samples) {
             if (s != 0) { anyNonZero = true; break; }
@@ -156,13 +165,9 @@ class Ym2149AudioIdiomaticTest {
     void setVolume_withAndWithoutEnvMode() {
         Ym2149AudioIdiomatic psg = new Ym2149AudioIdiomatic();
         psg.applyReset();
-        // Default overload uses envMode=false
         psg.setVolume(0, 12);
         psg.setVolume(1, 8,  false);
         psg.setVolume(2, 4,  true);  // envelope mode
-        // No exception; env mode bit must be reflected
-        // (Indirect check: run a few cycles without error)
-        psg.enClkPsgI = true; psg.selNI = false; psg.resetNI = true;
         assertDoesNotThrow(() -> psg.run(50));
     }
 
@@ -184,9 +189,29 @@ class Ym2149AudioIdiomaticTest {
         psg.setEnvelopePeriod(50);
         psg.setEnvelopeShape(0b1000);  // continuous, no attack, no alternate, no hold
         psg.setVolume(0, 0, true);     // channel A in envelope mode
-        psg.setMixer(0b00_111_110);
-        psg.enClkPsgI = true; psg.selNI = false; psg.resetNI = true;
-        // Should run without error
+        psg.setMixer(true, false, false, false, false, false);
         assertDoesNotThrow(() -> psg.run(500));
+    }
+
+    // -----------------------------------------------------------------------
+    // risingEdge parameter passing
+    // -----------------------------------------------------------------------
+
+    @Test
+    void risingEdge_resetPinClearsOutputs() {
+        Ym2149AudioIdiomatic psg = new Ym2149AudioIdiomatic();
+        // First set some non-zero state
+        psg.applyReset();
+        psg.setTonePeriod(0, 100);
+        psg.setVolume(0, 15);
+        psg.setMixer(true, false, false, false, false, false);
+        psg.run(500);
+
+        // Assert reset: must produce zero outputs
+        for (int i = 0; i < 8; i++) {
+            psg.risingEdge(true, false, false, false, false, 0);
+        }
+        assertEquals(0, psg.getChAO(),      "ch_a_o must be 0 during reset");
+        assertEquals(0, psg.getMixAudioO(), "mix_audio_o must be 0 during reset");
     }
 }
