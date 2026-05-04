@@ -1,0 +1,3 @@
+[submodule "vhdl/ym2149_audio"]
+	path = vhdl/ym2149_audio
+	url = https://github.com/dnotq/ym2149_audio.git
