@@ -32,15 +32,20 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <ol>
  *   <li><b>Idle playback</b> ({@code optimized_handles_2MHz_within_10pct_cpu}):
  *       No register writes — the fast-path is exercised on every cycle.</li>
- *   <li><b>PCM replay at 20 kHz</b>
+ *   <li><b>PCM replay at 20 kHz — channel A only</b>
  *       ({@code optimized_handles_2MHz_with_20kHz_writes_within_10pct_cpu}):
- *       Channel-A volume register is updated once every
+ *       Channel-A volume register (reg 8) is updated once every
  *       {@value #WRITE_INTERVAL} clock edges, matching the cadence of a
  *       20 kHz digital-to-analog replay algorithm that cycles through volume
  *       levels as fast as possible.  Each write calls
  *       {@link Ym2149AudioOptimized#writeRegister(int, int)}, which updates
  *       only the derived fields affected by that register — the worst-case
  *       workload for the register-caching hot path.</li>
+ *   <li><b>PCM replay at 20 kHz — all three channels (A, B, C)</b>
+ *       ({@code optimized_handles_2MHz_with_20kHz_3ch_writes_within_10pct_cpu}):
+ *       All three volume registers (regs 8–10) are written every
+ *       {@value #WRITE_INTERVAL} clock edges — 3× the write traffic of the
+ *       single-channel scenario — to verify the overhead is still negligible.</li>
  * </ol>
  */
 class ClockRateTest {
@@ -218,5 +223,94 @@ class ClockRateTest {
                         "Ym2149AudioOptimized with 20 kHz writes requires %.2f%% CPU at 2 MHz" +
                         " (limit %.0f%%; measured %.0f ticks/sec, %.0f writes/sec)",
                         cpuPct, MAX_CPU_PERCENT, ticksPerSecond, writesPerSec));
+    }
+
+    // -----------------------------------------------------------------------
+
+    /**
+     * Verifies that {@link Ym2149AudioOptimized} stays within
+     * {@value #MAX_CPU_PERCENT}% CPU at 2 MHz when <b>all three</b> channel
+     * volume registers (A = reg 8, B = reg 9, C = reg 10) are each rewritten
+     * at <b>20 kHz</b> simultaneously — 3× the write traffic of the
+     * single-channel scenario.
+     *
+     * <p>Every {@value #WRITE_INTERVAL}th clock edge is preceded by three calls
+     * to {@link Ym2149AudioOptimized#writeRegister(int, int)}, one per channel,
+     * each cycling through all 16 volume levels independently.  This exercises
+     * the full write-update path in {@link RegisterFile} for every volume
+     * register on each write event.
+     */
+    @Test
+    void optimized_handles_2MHz_with_20kHz_3ch_writes_within_10pct_cpu() {
+
+        // ------------------------------------------------------------------
+        // Warm-up: force JIT compilation of the three-register write path
+        // ------------------------------------------------------------------
+        Ym2149AudioOptimized warmupUut = new Ym2149AudioOptimized();
+        int sink = 0;
+        long warmupEndNs = System.nanoTime() + (long) WARMUP_SECONDS * 1_000_000_000L;
+        int wVol = 0;
+        while (System.nanoTime() < warmupEndNs) {
+            for (int i = 0; i < BATCH_SIZE; i++) {
+                if (i % WRITE_INTERVAL == 0) {
+                    warmupUut.writeRegister(8,  wVol        & 0x0F);
+                    warmupUut.writeRegister(9,  (wVol + 5)  & 0x0F);
+                    warmupUut.writeRegister(10, (wVol + 10) & 0x0F);
+                    wVol++;
+                }
+                warmupUut.risingEdge(true, false, true, false, false, 0);
+                sink ^= warmupUut.getMixAudioO();
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // Measurement: count ticks with 20 kHz writes to all three channels
+        // ------------------------------------------------------------------
+        Ym2149AudioOptimized uut = new Ym2149AudioOptimized();
+        long measureEndNs = System.nanoTime() + (long) MEASURE_SECONDS * 1_000_000_000L;
+        long tickCount    = 0;
+        long t0           = System.nanoTime();
+        int vol = 0;
+
+        while (System.nanoTime() < measureEndNs) {
+            for (int i = 0; i < BATCH_SIZE; i++) {
+                if (i % WRITE_INTERVAL == 0) {
+                    uut.writeRegister(8,  vol        & 0x0F);
+                    uut.writeRegister(9,  (vol + 5)  & 0x0F);
+                    uut.writeRegister(10, (vol + 10) & 0x0F);
+                    vol++;
+                }
+                uut.risingEdge(true, false, true, false, false, 0);
+                sink ^= uut.getMixAudioO();
+            }
+            tickCount += BATCH_SIZE;
+        }
+        long elapsedNs = System.nanoTime() - t0;
+
+        // Prevent the JIT from treating the loops as dead code.
+        if (sink == Integer.MIN_VALUE) throw new AssertionError("sink");
+
+        // ------------------------------------------------------------------
+        // Derive metrics
+        // ------------------------------------------------------------------
+        double ticksPerSecond   = (double) tickCount / elapsedNs * 1_000_000_000.0;
+        double cpuPct           = (TARGET_CLOCK_HZ / ticksPerSecond) * 100.0;
+        double writesPerSecPerCh = ticksPerSecond / WRITE_INTERVAL;
+
+        System.out.printf("%n=== Clock Rate Test — 20 kHz × 3-channel writes (Ym2149AudioOptimized) ===%n");
+        System.out.printf("  Measured rate : %,.0f ticks/sec%n",       ticksPerSecond);
+        System.out.printf("  Write rate    : %,.0f writes/sec/ch%n",   writesPerSecPerCh);
+        System.out.printf("  Total writes  : %,.0f writes/sec%n",      writesPerSecPerCh * 3);
+        System.out.printf("  Target clock  : %,.0f Hz (2 MHz)%n",      TARGET_CLOCK_HZ);
+        System.out.printf("  CPU at 2 MHz  : %.2f%%%n",                 cpuPct);
+        System.out.printf("  Limit         : %.0f%%%n",                 MAX_CPU_PERCENT);
+        System.out.printf("  Result        : %s%n",
+                cpuPct <= MAX_CPU_PERCENT ? "PASS" : "FAIL");
+
+        assertTrue(cpuPct <= MAX_CPU_PERCENT,
+                String.format(
+                        "Ym2149AudioOptimized with 20 kHz × 3-ch writes requires %.2f%% CPU at 2 MHz" +
+                        " (limit %.0f%%; measured %.0f ticks/sec, %.0f writes/sec/ch)",
+                        cpuPct, MAX_CPU_PERCENT, ticksPerSecond, writesPerSecPerCh));
     }
 }
