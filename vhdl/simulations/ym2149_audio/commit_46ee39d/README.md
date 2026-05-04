@@ -1,6 +1,0 @@
-- simulated with https://www.nickg.me.uk/nvc/manual.html
-- see also: https://www.nickg.me.uk/nvc/download.html
-- note: only 10 ms is captured, exercising tone, noise, mixer and all envelope shapes
-- nvc -a vhdl/ym2149_audio/rtl/ym2149_audio.vhd vhdl/testbench/tb_feat_ym2149.vhd
-- nvc -e tb_feat_ym2149
-- nvc -r tb_feat_ym2149 --format=vcd --wave=tb_feat_ym2149.vcd --stop-time=10ms
