@@ -1,18 +1,15 @@
 package org.jm2149.vhdl.optimized;
 
-import org.jm2149.vhdl.VcdParser;
+import org.jm2149.vhdl.VcdConformanceRunner;
 import org.jm2149.vhdl.idiomatic.Ym2149AudioIdiomatic;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Head-to-head throughput comparison: {@link Ym2149AudioOptimized} vs
@@ -209,97 +206,16 @@ class ComparisonBenchmarkTest {
      * Parse {@code vcdZip} and extract every rising {@code clk_i} edge as an
      * {@link EdgeInput}, in the order they occur in the simulation.
      *
-     * <p>The method mirrors the VCD replay logic in {@link OptimizedConformanceTest}
-     * but only captures input-side signals — no output comparison is performed
-     * here.
-     *
      * @param vcdZip path to the (possibly zipped) VCD file
      * @return immutable-order list of pre-edge input tuples
      */
     static List<EdgeInput> loadEdges(Path vcdZip) throws IOException {
-
         final List<EdgeInput> result = new ArrayList<>();
 
-        final String S_CLK  = "!";
-        final String S_EN   = "\"";
-        final String S_SEL  = "#";
-        final String S_RST  = "$";
-        final String S_BC   = "%";
-        final String S_BDIR = "&";
-        final String S_DATA = "'";
+        VcdConformanceRunner.run(vcdZip,
+                (en, sel, rst, bc, bdir, data, expCha, expChb, expChc, expMix, expPcm) ->
+                        result.add(new EdgeInput(en, sel, rst, bc, bdir, data)));
 
-        final int[] curClk  = {1};
-        final int[] curEn   = {0};
-        final int[] curSel  = {0};
-        final int[] curRst  = {0};
-        final int[] curBc   = {0};
-        final int[] curBdir = {0};
-        final int[] curData = {0};
-
-        final long[]               groupTime   = {-1};
-        final Map<String, Integer> groupEvents = new LinkedHashMap<>();
-
-        Runnable applyGroup = () -> {
-            for (Map.Entry<String, Integer> e : groupEvents.entrySet()) {
-                switch (e.getKey()) {
-                    case "!"  -> curClk[0]  = e.getValue();
-                    case "\"" -> curEn[0]   = e.getValue();
-                    case "#"  -> curSel[0]  = e.getValue();
-                    case "$"  -> curRst[0]  = e.getValue();
-                    case "%"  -> curBc[0]   = e.getValue();
-                    case "&"  -> curBdir[0] = e.getValue();
-                    case "'"  -> curData[0] = e.getValue();
-                    default   -> { /* output signals and other internal signals are ignored */ }
-                }
-            }
-            groupEvents.clear();
-        };
-
-        final int[] prevClk = {1};
-        Runnable processGroup = () -> {
-            Integer clkVal    = groupEvents.get(S_CLK);
-            boolean hasClkRise = clkVal != null && clkVal == 1 && prevClk[0] == 0;
-
-            if (hasClkRise) {
-                result.add(new EdgeInput(
-                        curEn[0]   != 0,
-                        curSel[0]  != 0,
-                        curRst[0]  != 0,
-                        curBc[0]   != 0,
-                        curBdir[0] != 0,
-                        curData[0]));
-                applyGroup.run();
-            } else {
-                applyGroup.run();
-            }
-            prevClk[0] = curClk[0];
-        };
-
-        VcdParser.VcdListener listener = new VcdParser.VcdListener() {
-            @Override
-            public void onChange(long timeFs, String symbol, int value) {
-                if (timeFs != groupTime[0]) {
-                    if (groupTime[0] >= 0 && !groupEvents.isEmpty()) {
-                        processGroup.run();
-                    }
-                    groupTime[0] = timeFs;
-                }
-                groupEvents.put(symbol, value);
-            }
-
-            @Override
-            public void onEnd() {
-                if (!groupEvents.isEmpty()) processGroup.run();
-            }
-        };
-
-        try (FileInputStream fis = new FileInputStream(vcdZip.toFile())) {
-            if (vcdZip.toString().endsWith(".zip")) {
-                VcdParser.parseZip(fis, listener);
-            } else {
-                VcdParser.parse(fis, listener);
-            }
-        }
         return result;
     }
 
