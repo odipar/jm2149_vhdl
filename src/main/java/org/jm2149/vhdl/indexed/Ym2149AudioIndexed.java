@@ -21,6 +21,9 @@ import org.jm2149.vhdl.optimized.RegisterFile;
  *   <li>{@link #getChAIndexO()} — 5-bit DAC index for channel A (0–31)</li>
  *   <li>{@link #getChBIndexO()} — 5-bit DAC index for channel B (0–31)</li>
  *   <li>{@link #getChCIndexO()} — 5-bit DAC index for channel C (0–31)</li>
+ *   <li>{@link #getChAO()} — 12-bit DAC level for channel A (convenience)</li>
+ *   <li>{@link #getChBO()} — 12-bit DAC level for channel B (convenience)</li>
+ *   <li>{@link #getChCO()} — 12-bit DAC level for channel C (convenience)</li>
  *   <li>{@link #getDataRO()} — registered data output (data_r_o)</li>
  * </ul>
  *
@@ -44,6 +47,17 @@ import org.jm2149.vhdl.optimized.RegisterFile;
  * </pre>
  */
 public final class Ym2149AudioIndexed {
+
+    // -----------------------------------------------------------------------
+    // DAC ROM  (32 entries, 12-bit logarithmic amplitude table)
+    // -----------------------------------------------------------------------
+
+    private static final int[] DACROM = {
+        0x000, 0x017, 0x01B, 0x021, 0x027, 0x02E, 0x037, 0x041,
+        0x04D, 0x05C, 0x06D, 0x081, 0x09A, 0x0B7, 0x0D9, 0x102,
+        0x133, 0x16D, 0x1B2, 0x204, 0x265, 0x2D8, 0x361, 0x405,
+        0x4C7, 0x5AD, 0x6BF, 0x804, 0x987, 0xB53, 0xD76, 0xFFF
+    };
 
     // -----------------------------------------------------------------------
     // Registered signals (_r) — VHDL flip-flop state
@@ -98,6 +112,30 @@ public final class Ym2149AudioIndexed {
 
     /** Channel C 5-bit DAC index output (0–31). */
     public int getChCIndexO()   { return idxCR; }
+
+    /**
+     * Channel A 12-bit DAC level output (convenience conversion of
+     * {@link #getChAIndexO()} via the chip's logarithmic ROM).
+     *
+     * @return unsigned 12-bit DAC level (0–4095)
+     */
+    public int getChAO()        { return DACROM[idxAR]; }
+
+    /**
+     * Channel B 12-bit DAC level output (convenience conversion of
+     * {@link #getChBIndexO()} via the chip's logarithmic ROM).
+     *
+     * @return unsigned 12-bit DAC level (0–4095)
+     */
+    public int getChBO()        { return DACROM[idxBR]; }
+
+    /**
+     * Channel C 12-bit DAC level output (convenience conversion of
+     * {@link #getChCIndexO()} via the chip's logarithmic ROM).
+     *
+     * @return unsigned 12-bit DAC level (0–4095)
+     */
+    public int getChCO()        { return DACROM[idxCR]; }
 
     // -----------------------------------------------------------------------
     // Single rising-edge simulation
