@@ -297,6 +297,9 @@ public final class Ym2149AudioIndexed {
     private void updateDacIndexCache(int reg, int value) {
         if (reg < 8 || reg > 10) return;
         int bits = value & 0x0F;
+        // Volume bits 1–15 map to odd DAC indices: 1→3, 2→5, …, 15→31
+        // (each 4-bit level occupies two consecutive ROM entries; the upper of
+        // the pair is always used for non-zero levels).  Volume 0 → index 0.
         int idx  = (bits == 0) ? 0 : ((bits << 1) | 1);
         switch (reg) {
             case 8  -> chAIndexR = idx;
