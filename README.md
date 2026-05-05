@@ -180,3 +180,20 @@ for (int i = 0; i < N; i++) {
     int sample = psg.getMixAudioO();
 }
 ```
+
+---
+
+## Authorship and Implementation Notes
+
+The overall **design methodology** — the four-stage pipeline (VHDL spec →
+testbench/VCD → direct Java translation → iterative Java refinements) — was
+conceived and directed by the project author **[@odipar](https://github.com/odipar)**.
+
+The actual **Java implementation** (translating the VHDL to Java, writing the
+conformance test infrastructure, and producing each successive refinement) was
+carried out with the assistance of an **LLM / GitHub Copilot** coding agent
+under the author's guidance.
+
+The full development history is available in the
+[commit log](../../commits/main), which serves as a detailed record of each
+incremental step.
