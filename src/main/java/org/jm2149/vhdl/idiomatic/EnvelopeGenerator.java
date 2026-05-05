@@ -131,17 +131,29 @@ public final class EnvelopeGenerator {
      * @return           12-bit DAC level
      */
     public int dacLevel(int[] dacRom, boolean envAttack) {
+        return dacRom[dacIndex(envAttack)];
+    }
+
+    /**
+     * Return the current 5-bit DAC index (0–31) without performing the
+     * DACROM lookup.
+     *
+     * <p>This method reads the current FSM state, so it must be called
+     * <em>before</em> the next {@link #tick}.
+     *
+     * @param envAttack  bit 2 of register 13 (envelope attack flag)
+     * @return           5-bit DAC index into the logarithmic ROM
+     */
+    public int dacIndex(boolean envAttack) {
         // env_sel_s = not attack_ff_r when env_attack_s='1' else attack_ff_r
         boolean envSelS = envAttack ? !attackFfR : attackFfR;
 
-        int envOutS;
         if (!continueFfR) {
-            envOutS = 0;
+            return 0;
         } else if (!envSelS) {
-            envOutS = (~shapeCntR) & 0x1F;  // bit-invert 5-bit value
+            return (~shapeCntR) & 0x1F;  // bit-invert 5-bit value
         } else {
-            envOutS = shapeCntR & 0x1F;
+            return shapeCntR & 0x1F;
         }
-        return dacRom[envOutS];
     }
 }
