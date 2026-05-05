@@ -9,10 +9,9 @@ import org.jm2149.vhdl.optimized.RegisterFile;
  * Indexed Java model of the ym2149_audio VHDL core.
  *
  * <p>Functionally derived from
- * {@link org.jm2149.vhdl.refactored.Ym2149AudioRefactored} but outputs
- * only the 5-bit <em>DAC index</em> for each channel instead of the
- * post-lookup 12-bit DAC level.  The DAC lookup, audio mixing, and signed
- * PCM conversion are intentionally omitted — they are considerations that
+ * {@link org.jm2149.vhdl.refactored.Ym2149AudioRefactored}.
+ * The audio mixing, and signed PCM conversion are intentionally omitted —
+ * they are considerations that
  * lie outside the YM2149 chip model and can be performed by the consumer
  * of these outputs if needed.
  *
