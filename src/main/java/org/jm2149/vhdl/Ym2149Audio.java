@@ -79,6 +79,25 @@ public class Ym2149Audio {
     };
 
     // -----------------------------------------------------------------------
+    // Flatline thresholds
+    // -----------------------------------------------------------------------
+
+    /** Default tone flatline threshold matching the VHDL specification. */
+    public static final int DEFAULT_TONE_FLATLINE_THRESHOLD  = 6;
+    /** Default noise flatline threshold matching the VHDL specification. */
+    public static final int DEFAULT_NOISE_FLATLINE_THRESHOLD = 5;
+
+    /**
+     * Tone periods strictly below this value are driven to a constant {@code '1'}.
+     */
+    private final int toneFlatlineThreshold;
+
+    /**
+     * Noise periods strictly below this value are driven to a constant {@code '1'}.
+     */
+    private final int noiseFlatlineThreshold;
+
+    // -----------------------------------------------------------------------
     // Registered signals (_r) — VHDL flip-flop state
     // -----------------------------------------------------------------------
 
@@ -135,6 +154,32 @@ public class Ym2149Audio {
     private int signBR  = 0;
     private int signCR  = 0;
     private int pcm14sR = 0;  // pcm14s_r (14-bit)
+
+    /**
+     * Construct a model using the default VHDL flatline thresholds
+     * (tone: {@value #DEFAULT_TONE_FLATLINE_THRESHOLD},
+     *  noise: {@value #DEFAULT_NOISE_FLATLINE_THRESHOLD}).
+     */
+    public Ym2149Audio() {
+        this(DEFAULT_TONE_FLATLINE_THRESHOLD, DEFAULT_NOISE_FLATLINE_THRESHOLD);
+    }
+
+    /**
+     * Construct a model with configurable flatline thresholds.
+     *
+     * @param toneFlatlineThreshold   tone periods strictly below this value are
+     *                                driven to a constant {@code '1'}; use
+     *                                {@value #DEFAULT_TONE_FLATLINE_THRESHOLD}
+     *                                for VHDL-spec behaviour
+     * @param noiseFlatlineThreshold  noise periods strictly below this value are
+     *                                driven to a constant {@code '1'}; use
+     *                                {@value #DEFAULT_NOISE_FLATLINE_THRESHOLD}
+     *                                for VHDL-spec behaviour
+     */
+    public Ym2149Audio(int toneFlatlineThreshold, int noiseFlatlineThreshold) {
+        this.toneFlatlineThreshold  = toneFlatlineThreshold;
+        this.noiseFlatlineThreshold = noiseFlatlineThreshold;
+    }
 
     // -----------------------------------------------------------------------
     // Single rising-edge simulation
@@ -233,7 +278,7 @@ public class Ym2149Audio {
         } else {
             chACntX = chACntR;
         }
-        boolean flatlineAS = chAPeriodS < 6;
+        boolean flatlineAS = chAPeriodS < toneFlatlineThreshold;
         boolean toneAX;
         if (flatlineAS) {
             toneAX = true;
@@ -252,7 +297,7 @@ public class Ym2149Audio {
         } else {
             chBCntX = chBCntR;
         }
-        boolean flatlineBS = chBPeriodS < 6;
+        boolean flatlineBS = chBPeriodS < toneFlatlineThreshold;
         boolean toneBX;
         if (flatlineBS) {
             toneBX = true;
@@ -271,7 +316,7 @@ public class Ym2149Audio {
         } else {
             chCCntX = chCCntR;
         }
-        boolean flatlineCS = chCPeriodS < 6;
+        boolean flatlineCS = chCPeriodS < toneFlatlineThreshold;
         boolean toneCX;
         if (flatlineCS) {
             toneCX = true;
@@ -290,7 +335,7 @@ public class Ym2149Audio {
         } else {
             noiseCntX = noiseCntR;
         }
-        boolean flatlineNS = noisePeriodS < 5;
+        boolean flatlineNS = noisePeriodS < noiseFlatlineThreshold;
         boolean noiseFfX;
         if (flatlineNS) {
             noiseFfX = true;

@@ -17,10 +17,36 @@ package org.jm2149.vhdl.idiomatic;
  */
 public final class ToneGenerator {
 
+    /** Default flatline threshold matching the VHDL specification. */
+    public static final int DEFAULT_FLATLINE_THRESHOLD = 6;
+
     /** 12-bit period counter. */
     private int     cntR = 0;
     /** Output flip-flop (VHDL init {@code '1'}). */
     private boolean ffR  = true;
+
+    /** Tone periods strictly below this value are driven to a constant {@code '1'}. */
+    private final int flatlineThreshold;
+
+    /**
+     * Construct a tone generator using the default VHDL flatline threshold
+     * ({@value #DEFAULT_FLATLINE_THRESHOLD}).
+     */
+    public ToneGenerator() {
+        this(DEFAULT_FLATLINE_THRESHOLD);
+    }
+
+    /**
+     * Construct a tone generator with a configurable flatline threshold.
+     *
+     * @param flatlineThreshold  tone periods strictly below this value are
+     *                           driven to a constant {@code '1'}; use
+     *                           {@value #DEFAULT_FLATLINE_THRESHOLD} for
+     *                           VHDL-spec behaviour
+     */
+    public ToneGenerator(int flatlineThreshold) {
+        this.flatlineThreshold = flatlineThreshold;
+    }
 
     // -----------------------------------------------------------------------
     // State transitions
@@ -47,7 +73,7 @@ public final class ToneGenerator {
 
         // --- Next-state flip-flop ---
         boolean nextFf;
-        if (period < 6) {                        // flatline: period too short
+        if (period < flatlineThreshold) {        // flatline: period too short
             nextFf = true;
         } else if (enCntX && cntR >= period) {
             nextFf = !ffR;
@@ -79,12 +105,12 @@ public final class ToneGenerator {
     }
 
     /**
-     * Returns {@code true} when the period is below the flatline threshold
-     * ({@code < 6}), meaning the generator is driven to a constant {@code '1'}.
+     * Returns {@code true} when {@code period} is below this generator's
+     * flatline threshold, meaning it would be driven to a constant {@code '1'}.
      *
      * @param period  12-bit tone period
      */
-    public static boolean isFlatline(int period) {
-        return period < 6;
+    public boolean isFlatline(int period) {
+        return period < flatlineThreshold;
     }
 }

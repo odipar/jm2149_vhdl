@@ -21,12 +21,38 @@ package org.jm2149.vhdl.idiomatic;
  */
 public final class NoiseGenerator {
 
+    /** Default flatline threshold matching the VHDL specification. */
+    public static final int DEFAULT_FLATLINE_THRESHOLD = 5;
+
     /** 5-bit period counter. */
     private int     cntR  = 0;
     /** Noise flip-flop (VHDL init {@code '1'}). */
     private boolean ffR   = true;
     /** 17-bit LFSR (VHDL init {@code 1_0000000000000000}). */
     private int     lfsrR = 0x1_0000;
+
+    /** Noise periods strictly below this value are driven to a constant {@code '1'}. */
+    private final int flatlineThreshold;
+
+    /**
+     * Construct a noise generator using the default VHDL flatline threshold
+     * ({@value #DEFAULT_FLATLINE_THRESHOLD}).
+     */
+    public NoiseGenerator() {
+        this(DEFAULT_FLATLINE_THRESHOLD);
+    }
+
+    /**
+     * Construct a noise generator with a configurable flatline threshold.
+     *
+     * @param flatlineThreshold  noise periods strictly below this value are
+     *                           driven to a constant {@code '1'}; use
+     *                           {@value #DEFAULT_FLATLINE_THRESHOLD} for
+     *                           VHDL-spec behaviour
+     */
+    public NoiseGenerator(int flatlineThreshold) {
+        this.flatlineThreshold = flatlineThreshold;
+    }
 
     // -----------------------------------------------------------------------
     // State transitions
@@ -56,7 +82,7 @@ public final class NoiseGenerator {
 
         // --- Next-state flip-flop ---
         boolean nextFf;
-        if (period < 5) {                        // flatline: period too short
+        if (period < flatlineThreshold) {        // flatline: period too short
             nextFf = true;
         } else if (enCntX && cntR >= period) {
             nextFf = !ffR;
@@ -97,12 +123,12 @@ public final class NoiseGenerator {
     }
 
     /**
-     * Returns {@code true} when the period is below the flatline threshold
-     * ({@code < 5}).
+     * Returns {@code true} when {@code period} is below this generator's
+     * flatline threshold, meaning it would be driven to a constant {@code '1'}.
      *
      * @param period  5-bit noise period
      */
-    public static boolean isFlatline(int period) {
-        return period < 5;
+    public boolean isFlatline(int period) {
+        return period < flatlineThreshold;
     }
 }

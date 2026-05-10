@@ -11,10 +11,10 @@ package org.jm2149.vhdl.optimized;
  *
  * <p>Register-to-field mapping:
  * <pre>
- *  0–1   → chAPeriod  (12-bit)   flatlineA = chAPeriod &lt; 6
- *  2–3   → chBPeriod  (12-bit)   flatlineB = chBPeriod &lt; 6
- *  4–5   → chCPeriod  (12-bit)   flatlineC = chCPeriod &lt; 6
- *  6     → noisePeriod (5-bit)   flatlineN = noisePeriod &lt; 5
+ *  0–1   → chAPeriod  (12-bit)   flatlineA = chAPeriod &lt; toneFlatlineThreshold
+ *  2–3   → chBPeriod  (12-bit)   flatlineB = chBPeriod &lt; toneFlatlineThreshold
+ *  4–5   → chCPeriod  (12-bit)   flatlineC = chCPeriod &lt; toneFlatlineThreshold
+ *  6     → noisePeriod (5-bit)   flatlineN = noisePeriod &lt; noiseFlatlineThreshold
  *  7     → mixer enable flags (active-low in hardware, stored as-is)
  *  8     → chAMode (bit 4)
  *  9     → chBMode (bit 4)
@@ -63,10 +63,45 @@ public final class RegisterFile {
     private boolean envHold      = false;
 
     // Flatline flags — pre-computed from period comparisons
-    private boolean flatlineA = true;   // chAPeriod < 6
+    private boolean flatlineA = true;
     private boolean flatlineB = true;
     private boolean flatlineC = true;
-    private boolean flatlineN = true;   // noisePeriod < 5
+    private boolean flatlineN = true;
+
+    // Flatline thresholds
+    private final int toneFlatlineThreshold;
+    private final int noiseFlatlineThreshold;
+
+    /** Default tone flatline threshold matching the VHDL specification. */
+    public static final int DEFAULT_TONE_FLATLINE_THRESHOLD  = 6;
+    /** Default noise flatline threshold matching the VHDL specification. */
+    public static final int DEFAULT_NOISE_FLATLINE_THRESHOLD = 5;
+
+    /**
+     * Construct a register file using the default VHDL flatline thresholds
+     * (tone: {@value #DEFAULT_TONE_FLATLINE_THRESHOLD},
+     *  noise: {@value #DEFAULT_NOISE_FLATLINE_THRESHOLD}).
+     */
+    public RegisterFile() {
+        this(DEFAULT_TONE_FLATLINE_THRESHOLD, DEFAULT_NOISE_FLATLINE_THRESHOLD);
+    }
+
+    /**
+     * Construct a register file with configurable flatline thresholds.
+     *
+     * @param toneFlatlineThreshold   tone periods strictly below this value are
+     *                                flagged as flatline; use
+     *                                {@value #DEFAULT_TONE_FLATLINE_THRESHOLD}
+     *                                for VHDL-spec behaviour
+     * @param noiseFlatlineThreshold  noise periods strictly below this value are
+     *                                flagged as flatline; use
+     *                                {@value #DEFAULT_NOISE_FLATLINE_THRESHOLD}
+     *                                for VHDL-spec behaviour
+     */
+    public RegisterFile(int toneFlatlineThreshold, int noiseFlatlineThreshold) {
+        this.toneFlatlineThreshold  = toneFlatlineThreshold;
+        this.noiseFlatlineThreshold = noiseFlatlineThreshold;
+    }
 
     // -----------------------------------------------------------------------
     // Reset
@@ -157,13 +192,13 @@ public final class RegisterFile {
     /** Envelope HOLD bit (register 13 bit 0). */
     public boolean isEnvHold()      { return envHold; }
 
-    /** {@code true} when channel A tone period is below the flatline threshold ({@code < 6}). */
+    /** {@code true} when channel A tone period is below the flatline threshold. */
     public boolean isFlatlineA() { return flatlineA; }
-    /** {@code true} when channel B tone period is below the flatline threshold ({@code < 6}). */
+    /** {@code true} when channel B tone period is below the flatline threshold. */
     public boolean isFlatlineB() { return flatlineB; }
-    /** {@code true} when channel C tone period is below the flatline threshold ({@code < 6}). */
+    /** {@code true} when channel C tone period is below the flatline threshold. */
     public boolean isFlatlineC() { return flatlineC; }
-    /** {@code true} when the noise period is below the flatline threshold ({@code < 5}). */
+    /** {@code true} when the noise period is below the flatline threshold. */
     public boolean isFlatlineN() { return flatlineN; }
 
     // -----------------------------------------------------------------------
@@ -183,19 +218,19 @@ public final class RegisterFile {
         switch (reg) {
             case 0: case 1:
                 chAPeriod = ((regs[1] & 0x0F) << 8) | (regs[0] & 0xFF);
-                flatlineA = chAPeriod < 6;
+                flatlineA = chAPeriod < toneFlatlineThreshold;
                 break;
             case 2: case 3:
                 chBPeriod = ((regs[3] & 0x0F) << 8) | (regs[2] & 0xFF);
-                flatlineB = chBPeriod < 6;
+                flatlineB = chBPeriod < toneFlatlineThreshold;
                 break;
             case 4: case 5:
                 chCPeriod = ((regs[5] & 0x0F) << 8) | (regs[4] & 0xFF);
-                flatlineC = chCPeriod < 6;
+                flatlineC = chCPeriod < toneFlatlineThreshold;
                 break;
             case 6:
                 noisePeriod = regs[6] & 0x1F;
-                flatlineN   = noisePeriod < 5;
+                flatlineN   = noisePeriod < noiseFlatlineThreshold;
                 break;
             case 7:
                 chAToneEnN  = (regs[7] & 0x01) != 0;
