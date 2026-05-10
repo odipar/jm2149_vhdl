@@ -72,14 +72,18 @@ public final class RegisterFile {
     private final int toneFlatlineThreshold;
     private final int noiseFlatlineThreshold;
 
+    /** Default tone flatline threshold matching the VHDL specification. */
+    public static final int DEFAULT_TONE_FLATLINE_THRESHOLD  = 6;
+    /** Default noise flatline threshold matching the VHDL specification. */
+    public static final int DEFAULT_NOISE_FLATLINE_THRESHOLD = 5;
+
     /**
      * Construct a register file using the default VHDL flatline thresholds
-     * (tone: {@value org.jm2149.vhdl.idiomatic.ToneGenerator#DEFAULT_FLATLINE_THRESHOLD},
-     *  noise: {@value org.jm2149.vhdl.idiomatic.NoiseGenerator#DEFAULT_FLATLINE_THRESHOLD}).
+     * (tone: {@value #DEFAULT_TONE_FLATLINE_THRESHOLD},
+     *  noise: {@value #DEFAULT_NOISE_FLATLINE_THRESHOLD}).
      */
     public RegisterFile() {
-        this(org.jm2149.vhdl.idiomatic.ToneGenerator.DEFAULT_FLATLINE_THRESHOLD,
-             org.jm2149.vhdl.idiomatic.NoiseGenerator.DEFAULT_FLATLINE_THRESHOLD);
+        this(DEFAULT_TONE_FLATLINE_THRESHOLD, DEFAULT_NOISE_FLATLINE_THRESHOLD);
     }
 
     /**
@@ -87,11 +91,11 @@ public final class RegisterFile {
      *
      * @param toneFlatlineThreshold   tone periods strictly below this value are
      *                                flagged as flatline; use
-     *                                {@value org.jm2149.vhdl.idiomatic.ToneGenerator#DEFAULT_FLATLINE_THRESHOLD}
+     *                                {@value #DEFAULT_TONE_FLATLINE_THRESHOLD}
      *                                for VHDL-spec behaviour
      * @param noiseFlatlineThreshold  noise periods strictly below this value are
      *                                flagged as flatline; use
-     *                                {@value org.jm2149.vhdl.idiomatic.NoiseGenerator#DEFAULT_FLATLINE_THRESHOLD}
+     *                                {@value #DEFAULT_NOISE_FLATLINE_THRESHOLD}
      *                                for VHDL-spec behaviour
      */
     public RegisterFile(int toneFlatlineThreshold, int noiseFlatlineThreshold) {
