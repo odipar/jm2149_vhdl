@@ -89,12 +89,42 @@ public final class Ym2149AudioIndexed {
     // Sub-components
     // -----------------------------------------------------------------------
 
-    private final RegisterFile      rf    = new RegisterFile();
-    private final ToneGenerator     toneA = new ToneGenerator();
-    private final ToneGenerator     toneB = new ToneGenerator();
-    private final ToneGenerator     toneC = new ToneGenerator();
-    private final NoiseGenerator    noise = new NoiseGenerator();
-    private final EnvelopeGenerator env   = new EnvelopeGenerator();
+    private final RegisterFile      rf;
+    private final ToneGenerator     toneA;
+    private final ToneGenerator     toneB;
+    private final ToneGenerator     toneC;
+    private final NoiseGenerator    noise;
+    private final EnvelopeGenerator env = new EnvelopeGenerator();
+
+    /**
+     * Construct a model using the default VHDL flatline thresholds
+     * (tone: {@value ToneGenerator#DEFAULT_FLATLINE_THRESHOLD},
+     *  noise: {@value NoiseGenerator#DEFAULT_FLATLINE_THRESHOLD}).
+     */
+    public Ym2149AudioIndexed() {
+        this(ToneGenerator.DEFAULT_FLATLINE_THRESHOLD,
+             NoiseGenerator.DEFAULT_FLATLINE_THRESHOLD);
+    }
+
+    /**
+     * Construct a model with configurable flatline thresholds.
+     *
+     * @param toneFlatlineThreshold   tone periods strictly below this value are
+     *                                driven to a constant {@code '1'}; use
+     *                                {@value ToneGenerator#DEFAULT_FLATLINE_THRESHOLD}
+     *                                for VHDL-spec behaviour
+     * @param noiseFlatlineThreshold  noise periods strictly below this value are
+     *                                driven to a constant {@code '1'}; use
+     *                                {@value NoiseGenerator#DEFAULT_FLATLINE_THRESHOLD}
+     *                                for VHDL-spec behaviour
+     */
+    public Ym2149AudioIndexed(int toneFlatlineThreshold, int noiseFlatlineThreshold) {
+        this.rf    = new RegisterFile(toneFlatlineThreshold, noiseFlatlineThreshold);
+        this.toneA = new ToneGenerator(toneFlatlineThreshold);
+        this.toneB = new ToneGenerator(toneFlatlineThreshold);
+        this.toneC = new ToneGenerator(toneFlatlineThreshold);
+        this.noise = new NoiseGenerator(noiseFlatlineThreshold);
+    }
 
     // -----------------------------------------------------------------------
     // Outputs — typed getters (valid after each risingEdge() call)
