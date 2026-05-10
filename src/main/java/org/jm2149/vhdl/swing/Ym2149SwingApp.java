@@ -32,7 +32,7 @@ public final class Ym2149SwingApp extends JFrame {
     // -----------------------------------------------------------------------
 
     /** PSG master clock rate (cycles per second fed to risingEdge). */
-    private static final int PSG_CLOCK_HZ  = 250_000;
+    private static final int PSG_CLOCK_HZ  = 2_000_000;
 
     /** Target audio output sample rate (Hz). */
     private static final int AUDIO_RATE_HZ = 44_100;
@@ -82,7 +82,7 @@ public final class Ym2149SwingApp extends JFrame {
     // PSG model — only accessed by the audio thread after startAudio()
     // -----------------------------------------------------------------------
 
-    private final Ym2149AudioIndexed psg = new Ym2149AudioIndexed();
+    private final Ym2149AudioIndexed psg = new Ym2149AudioIndexed(0,0);
 
     // -----------------------------------------------------------------------
     // Audio thread state
@@ -182,7 +182,7 @@ public final class Ym2149SwingApp extends JFrame {
         g.gridx = 1;
         g.fill = GridBagConstraints.HORIZONTAL;
         g.weightx = 1;
-        JSlider sl = new JSlider(6, 4095, config.toneA());
+        JSlider sl = new JSlider(0, 4095, config.toneA());
         sl.setPreferredSize(new Dimension(220, sl.getPreferredSize().height));
         slTone[ch] = sl;
         p.add(sl, g);
@@ -253,7 +253,7 @@ public final class Ym2149SwingApp extends JFrame {
         p.add(new JLabel("Period:"), g);
 
         g.gridx = 1; g.fill = GridBagConstraints.HORIZONTAL; g.weightx = 1;
-        slNoise = new JSlider(1, 31, config.noisePeriod());
+        slNoise = new JSlider(0, 31, config.noisePeriod());
         p.add(slNoise, g);
 
         g.gridx = 2; g.fill = GridBagConstraints.NONE; g.weightx = 0;
@@ -536,7 +536,6 @@ public final class Ym2149SwingApp extends JFrame {
      * @return formatted frequency string
      */
     private static String toneFreqLabel(int period) {
-        if (period < 6) return "  flatline ";
         double hz = (double) PSG_CLOCK_HZ / (2.0 * 8.0 * 2.0 * period);
         if (hz >= 1000.0) {
             return String.format("%6.2f kHz", hz / 1000.0);
